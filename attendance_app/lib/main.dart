@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:attendance_app/models/offline_event.dart' as models;
-import 'pages/services/attendance_service.dart';
 
 List<CameraDescription> cameras = [];
 
