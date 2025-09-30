@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:attendance_app/models/offline_event.dart' as models;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../models/attendance_record.dart';
 
 List<CameraDescription> cameras = [];
 
@@ -13,7 +14,11 @@ Future<void> main() async {
   // Initialize Hive
   await Hive.initFlutter();
   Hive.registerAdapter(models.OfflineEventAdapter());
+  Hive.registerAdapter(AttendanceRecordAdapter());
+  Hive.registerAdapter(StudentAttendanceAdapter());
   await Hive.openBox<models.OfflineEvent>('offline_events');
+  await Hive.openBox<AttendanceRecord>('attendance_records');
+
 
   // Get available cameras
   cameras = await availableCameras();
@@ -35,62 +40,46 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _rollController = TextEditingController();
 
-  CameraController? _cameraController;
+  CameraController? _controller;
   bool _isCameraReady = false;
+  int _currentCameraIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _initCamera();
+    _initCamera(_currentCameraIndex);
   }
 
-  Future<void> _initCamera() async {
+  Future<void> _initCamera(int cameraIndex) async {
     if (cameras.isNotEmpty) {
-      _cameraController = CameraController(cameras[0], ResolutionPreset.medium);
+      _controller = CameraController(cameras[cameraIndex], ResolutionPreset.medium);
       try {
-        await _cameraController!.initialize();
+        await _controller!.initialize();
         if (!mounted) return;
         setState(() {
           _isCameraReady = true;
         });
       } catch (e) {
-        print("Camera init error: $e");
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error initializing camera: $e")),
-          );
-        }
+        print('Camera init error: $e');
       }
+    }
+  }
+
+  void _switchCamera() {
+    if (cameras.length > 1) {
+      _currentCameraIndex = (_currentCameraIndex + 1) % cameras.length;
+      _initCamera(_currentCameraIndex);
     } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("No cameras available")),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No second camera found')),
+      );
     }
   }
 
   @override
   void dispose() {
-    _cameraController?.dispose();
-    _nameController.dispose();
-    _rollController.dispose();
+    _controller?.dispose();
     super.dispose();
-  }
-
-  Future<void> _captureIris() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
-    try {
-      final XFile image = await _cameraController!.takePicture();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Iris captured: ${image.path}")),
-      );
-      // Save or send this image to your ML/Backend service
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to capture iris: $e")),
-      );
-    }
   }
 
   @override
@@ -98,111 +87,152 @@ class _RegisterPageState extends State<RegisterPage> {
     return Scaffold(
       appBar: AppBar(title: const Text("Register Student")),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                "Student Details",
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.deepPurple,
-                ),
-              ),
-              const SizedBox(height: 24),
-              TextFormField(
-                controller: _nameController,
-                decoration: InputDecoration(
-                  labelText: "Student Name",
-                  hintText: "Enter full name",
-                  prefixIcon: const Icon(Icons.person_outline),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  filled: true,
-                  fillColor: Colors.grey[100],
-                ),
-                validator: (value) =>
-                    value!.isEmpty ? "Please enter the student's name" : null,
-              ),
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: _rollController,
-                decoration: InputDecoration(
-                  labelText: "Roll Number",
-                  hintText: "e.g., 101, 2024CS01",
-                  prefixIcon: const Icon(Icons.numbers),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  filled: true,
-                  fillColor: Colors.grey[100],
-                ),
-                validator: (value) =>
-                    value!.isEmpty ? "Please enter the roll number" : null,
-              ),
-              const SizedBox(height: 30),
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Column(
-                    children: [
-                      const Text(
-                        "Iris Biometric Capture",
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 16),
-                      _isCameraReady
-                          ? SizedBox(
-                              height: 200,
-                              child: CameraPreview(_cameraController!),
-                            )
-                          : const Icon(Icons.visibility_outlined,
-                              size: 60, color: Colors.deepPurple),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.camera_alt),
-                        label: const Text("Capture Iris"),
-                        onPressed: _isCameraReady ? _captureIris : null,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 30, vertical: 15),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ],
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  "Student Details",
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.deepPurple,
                   ),
                 ),
-              ),
-              const SizedBox(height: 30),
-              ElevatedButton(
-                onPressed: () {
-                  if (_formKey.currentState!.validate()) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                            "Registered: ${_nameController.text} (Roll: ${_rollController.text})"),
-                        backgroundColor: Colors.green,
+                const SizedBox(height: 24),
+                TextFormField(
+                  controller: _nameController,
+                  decoration: InputDecoration(
+                    labelText: "Student Name",
+                    hintText: "Enter full name",
+                    prefixIcon: const Icon(Icons.person_outline),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[100],
+                  ),
+                  validator: (value) => value!.isEmpty ? "Please enter the student's name" : null,
+                ),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _rollController,
+                  decoration: InputDecoration(
+                    labelText: "Roll Number",
+                    hintText: "e.g., 101, 2024CS01",
+                    prefixIcon: const Icon(Icons.numbers),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[100],
+                  ),
+                  validator: (value) => value!.isEmpty ? "Please enter the roll number" : null,
+                ),
+                const SizedBox(height: 30),
+
+                // Iris Capture Card
+// Iris Capture Card
+              Stack(
+                children: [
+                  Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            height: 220, // make it wider/taller
+                            width: double.infinity,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: _isCameraReady && _controller != null
+                                  ? CameraPreview(_controller!)
+                                  : Container(
+                                      color: Colors.grey[200],
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.visibility_outlined,
+                                          size: 60,
+                                          color: Colors.deepPurple,
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.camera_alt),
+                            label: const Text("Capture Iris"),
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Camera opened for iris capture...")),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    );
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text(
-                  "Register Student",
-                  style: TextStyle(fontSize: 18),
-                ),
+                    ),
+                  ),
+
+                  // Transparent switch camera button inside camera bounds
+                  Positioned(
+                    top: 16,
+                    right: 16,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black26, // semi-transparent
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.cameraswitch, color: Colors.white),
+                        onPressed: _switchCamera,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+
+
+                const SizedBox(height: 30),
+                ElevatedButton(
+                  onPressed: () {
+                    if (_formKey.currentState!.validate()) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text("Registered: ${_nameController.text} (Roll: ${_rollController.text})"),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    "Register Student",
+                    style: TextStyle(fontSize: 18),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -211,14 +241,77 @@ class _RegisterPageState extends State<RegisterPage> {
 }
 
 
+
 class ReportsPage extends StatelessWidget {
   const ReportsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final Box<AttendanceRecord> box =
+        Hive.box<AttendanceRecord>('attendance_records');
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Reports")),
-      body: const Center(child: Text("Reports Page UI goes here")),
+      appBar: AppBar(title: const Text("Attendance Reports")),
+      body: ValueListenableBuilder(
+        valueListenable: box.listenable(),
+        builder: (context, Box<AttendanceRecord> box, _) {
+          if (box.isEmpty) {
+            return const Center(
+              child: Text("No attendance records found."),
+            );
+          }
+
+          return ListView.builder(
+            itemCount: box.length,
+            itemBuilder: (context, index) {
+              final record = box.getAt(index)!;
+
+              return Card(
+                margin: const EdgeInsets.all(12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: ExpansionTile(
+                  title: Text(
+                    "Date: ${record.date}",
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                  children: [
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        columns: const [
+                          DataColumn(label: Text("Roll No")),
+                          DataColumn(label: Text("Name")),
+                          DataColumn(label: Text("Status")),
+                        ],
+                        rows: record.records
+                            .map(
+                              (student) => DataRow(cells: [
+                                DataCell(Text(student.rollNumber)),
+                                DataCell(Text(student.studentName)),
+                                DataCell(Text(
+                                  student.isPresent ? "Present ✅" : "Absent ❌",
+                                  style: TextStyle(
+                                    color: student.isPresent
+                                        ? Colors.green
+                                        : Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                )),
+                              ]),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
@@ -258,18 +351,17 @@ class AttendancePage extends StatefulWidget {
 class _AttendancePageState extends State<AttendancePage> {
   CameraController? _controller;
   bool _isReady = false;
-  late Box<models.OfflineEvent> _attendanceBox;
+  int _currentCameraIndex = 0; // Track which camera is active
 
   @override
   void initState() {
     super.initState();
-    _attendanceBox = Hive.box<models.OfflineEvent>('offline_events');
-    _initCamera();
+    _initCamera(_currentCameraIndex);
   }
 
-  Future<void> _initCamera() async {
+  Future<void> _initCamera(int cameraIndex) async {
     if (cameras.isNotEmpty) {
-      _controller = CameraController(cameras[0], ResolutionPreset.medium);
+      _controller = CameraController(cameras[cameraIndex], ResolutionPreset.medium);
       try {
         await _controller!.initialize();
         if (!mounted) return;
@@ -279,15 +371,28 @@ class _AttendancePageState extends State<AttendancePage> {
       } catch (e) {
         print('Camera init error: $e');
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('Error initializing camera: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error initializing camera: $e')),
+          );
         }
       }
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('No cameras available')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No cameras available')),
+        );
       }
+    }
+  }
+
+  void _switchCamera() {
+    if (cameras.length > 1) {
+      _currentCameraIndex = (_currentCameraIndex + 1) % cameras.length;
+      _initCamera(_currentCameraIndex);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No second camera found')),
+      );
     }
   }
 
@@ -295,82 +400,6 @@ class _AttendancePageState extends State<AttendancePage> {
   void dispose() {
     _controller?.dispose();
     super.dispose();
-  }
-
-  Future<XFile?> captureStudentImage() async {
-    if (_controller == null || !_controller!.value.isInitialized) return null;
-    try {
-      final image = await _controller!.takePicture();
-      return image;
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error capturing image: $e')));
-      }
-      return null;
-    }
-  }
-
-  Future<Map<String, dynamic>> sendImageToMLService(XFile image) async {
-    final uri = Uri.parse('http://10.0.2.2:8000/recognize'); // Android emulator
-    final request = http.MultipartRequest('POST', uri);
-    request.files.add(await http.MultipartFile.fromPath('file', image.path));
-
-    final response = await request.send();
-    final respStr = await response.stream.bytesToString();
-    return jsonDecode(respStr);
-  }
-
-  Future<void> scanAttendance() async {
-    if (!_isReady) return;
-
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text("Scanning student...")));
-
-    final image = await captureStudentImage();
-    if (image == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Failed to capture image")));
-      return;
-    }
-
-    try {
-      final result = await sendImageToMLService(image);
-
-      final event = models.OfflineEvent(
-        classId: 1,
-        studentId: result['status'] == 'ok' ? int.tryParse(result['student_id'].toString()) : null,
-        method: 'iris',
-        confidence: result['confidence'] != null
-            ? double.tryParse(result['confidence'].toString())
-            : null,
-        imagePath: image.path,
-        timestamp: DateTime.now(),
-      );
-
-      _attendanceBox.add(event);
-
-      if (result['status'] == 'ok') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  "Attendance marked for student ${result['student_id']} (Confidence: ${result['confidence'].toStringAsFixed(2)})"),
-              backgroundColor: Colors.green),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text("No matching student found"),
-              backgroundColor: Colors.red),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text("Error scanning student: $e"),
-            backgroundColor: Colors.red),
-      );
-    }
   }
 
   @override
@@ -387,14 +416,26 @@ class _AttendancePageState extends State<AttendancePage> {
                   ),
                 )
               : const Center(child: CircularProgressIndicator()),
+          
+          // Switch camera icon at top-right
+          Positioned(
+            top: 40,
+            right: 20,
+            child: FloatingActionButton(
+              mini: true,
+              backgroundColor: Colors.deepPurple,
+              onPressed: _switchCamera,
+              child: const Icon(Icons.cameraswitch),
+            ),
+          ),
+
           Positioned(
             bottom: 40,
             left: 20,
             right: 20,
             child: Card(
               elevation: 8,
-              shape:
-                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               child: Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
@@ -402,19 +443,21 @@ class _AttendancePageState extends State<AttendancePage> {
                   children: [
                     const Text(
                       "Scan your iris to mark attendance",
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
                       icon: const Icon(Icons.verified_user),
                       label: const Text("Scan Attendance"),
-                      onPressed: scanAttendance,
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Scanning student...")),
+                        );
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.deepPurple,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 40, vertical: 15),
+                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -430,6 +473,8 @@ class _AttendancePageState extends State<AttendancePage> {
     );
   }
 }
+
+
 
 // ------------------- Home Page -------------------
 class HomePage extends StatelessWidget {
