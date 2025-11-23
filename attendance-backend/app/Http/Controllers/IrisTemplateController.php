@@ -11,7 +11,7 @@ class IrisTemplateController extends Controller
      */
     public function index()
     {
-        //
+        return \App\Models\IrisTemplate::all();
     }
 
     /**

@@ -44,6 +44,7 @@ Route::post('/attendance', [AttendanceController::class, 'store']);
 Route::get('/attendance', [AttendanceController::class, 'index']);
 Route::get('/attendance/{id}', [AttendanceController::class, 'show']);
 
+Route::get('/iris-templates', [IrisTemplateController::class, 'index']);
 Route::post('/iris-templates', [IrisTemplateController::class, 'store']);
 Route::get('/iris-templates/{student_id}', [IrisTemplateController::class, 'show']);
 

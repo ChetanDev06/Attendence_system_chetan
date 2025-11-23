@@ -312,7 +312,7 @@ class _AttendancePageState extends State<AttendancePage> {
   }
 
   Future<Map<String, dynamic>> sendImageToMLService(XFile image) async {
-    final uri = Uri.parse('http://10.0.2.2:8000/recognize'); // Android emulator
+    final uri = Uri.parse('http://10.0.2.2:8001/recognize'); // Android emulator
     final request = http.MultipartRequest('POST', uri);
     request.files.add(await http.MultipartFile.fromPath('file', image.path));
 
